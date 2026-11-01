@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local dataset cache (repo-root only; src/prompt_protect/data/ is code)
+/data/
+results/
+
+# Local agent notes
+CLAUDE.md
+
+# graphify output (regenerate with /graphify src --update)
+graphify-out/

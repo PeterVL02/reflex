@@ -1,0 +1,9 @@
+{
+    "data": {
+        "repo": "neuralchemy/Prompt-injection-dataset",
+        "version": "full",
+        "seed": 42,
+        "cache_dir": "data/cache",
+        "revision": "7d70432dfcf47a821612cbf9d34e9d9e3ad20e75"
+    }
+}

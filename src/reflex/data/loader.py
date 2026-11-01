@@ -35,7 +35,11 @@ CONFIG: Config = json.loads(
 
 REPO: str = CONFIG["data"]["repo"]
 VERSION: str = CONFIG["data"]["version"]
-CACHE_PATH: Path = REPO_ROOT / CONFIG["data"]["cache_dir"] / f"{VERSION}.parquet"
+REVISION: str = CONFIG["data"]["revision"]
+# The revision is in the name, so bumping it in config.json never reuses a stale cache.
+CACHE_PATH: Path = (
+    REPO_ROOT / CONFIG["data"]["cache_dir"] / f"{VERSION}_{REVISION[:7]}.parquet"
+)
 
 
 def load_data(refresh: bool = False) -> pd.DataFrame:
@@ -55,7 +59,7 @@ def load_data(refresh: bool = False) -> pd.DataFrame:
 
     from datasets import load_dataset  # slow import, only needed to download
 
-    ds = load_dataset(REPO, VERSION, revision=CONFIG["data"]["revision"])
+    ds = load_dataset(REPO, VERSION, revision=REVISION)
     # Keep the official HF split so we can also score on its test set, like the data card.
     df = pd.concat(
         [ds[key].to_pandas().assign(split=key) for key in ds], ignore_index=True

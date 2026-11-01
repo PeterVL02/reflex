@@ -66,11 +66,11 @@ class LayaFinetunedClassifier(ClassifierMixin, BaseEstimator):
         checkpoint on disk. Laya holds out its own calibration slice from (X, y).
 
         Raises:
-            ValueError: If `output_dir` is outside data/models (it gets deleted).
+            ValueError: If `output_dir` is not a subdirectory of data/models (it gets deleted).
             FileExistsError: If another fit holds the lock on `output_dir`.
         """
         out = Path(self.output_dir).resolve()
-        if not out.is_relative_to(MODELS_DIR):
+        if MODELS_DIR not in out.parents:
             raise ValueError(f"output_dir must be inside {MODELS_DIR}, got {out}")
         # A second fit on the same dir would delete a running fine-tune's checkpoint.
         lock = out.with_name(f"{out.name}.lock")

@@ -3,6 +3,8 @@ name = "reflex"
 version = "0.1.0"
 description = "REFLEX: Rapid Ensemble of Frozen and Learned EXperts - a fast, leakage-aware prompt-injection screening layer"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name = "PeterVL02", email = "p.vesterenglarsen@gmail.com" }
 ]

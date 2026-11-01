@@ -112,7 +112,7 @@ FPR is identical on both versions because all 54 near-twins are malicious. The l
 
 Against the old (leaky) folds, CV accuracy moved by at most 0.2 points.
 
-¹ The fine-tune ran on the folds from before the near-duplicate fix (its process had already loaded the old sampler). On the same folds, zero-shot Laya with the same instruction scored 81.3% accuracy, AUROC 0.915 and FPR 7.8%. Fine-tuning won on every fold, mostly through recall (0.978 vs 0.739). **On its own, fine-tuned Laya is the strongest single model in-distribution.** Whether it keeps zero-shot Laya's robustness on unseen sources is still open (see below).
+¹ This fine-tune ran on the folds from before the near-duplicate fix; a re-run on the fixed folds is in progress. On the same folds, zero-shot Laya with the same instruction scored 81.3% accuracy, AUROC 0.915 and FPR 7.8%. Fine-tuning won on every fold, mostly through recall (0.978 vs 0.739). **On its own, fine-tuned Laya is the strongest single model in-distribution.** Whether it keeps zero-shot Laya's robustness on unseen sources is still open (see below).
 
 **Ablation (GBM combiner):**
 
@@ -212,25 +212,6 @@ As a layer in front of an LLM, every prompt pays this cost before the model sees
 
 The two transformer models (Qwen and Laya) dominate the cost and are independent, so they can run concurrently. TF-IDF + LR alone is the cheap fallback when a latency budget is tight.
 
-## Fine-tuning Laya
-
-Laya can be fine-tuned with its own training loop (`laya.train.finetune`). It takes JSONL rows of `{state, questions, expected}`, trains with an RL objective for calibrated probabilities (RLCD) or soft cross-entropy, fits calibration temperatures on a held-out slice of the training data, and saves a checkpoint that `laya.load()` reads. In this repo, `model/laya_finetune.py` wraps it as an sklearn estimator so it runs through the same `nested_cv` as everything else.
-
-**What we ran:** laya's default `TrainConfig`: 4 epochs, effective batch 64 (micro-batch 8 × 8 accumulation), the RLCD objective, encoder lr 2.5e-5, head lr 1e-4, full encoder (not frozen), amp and gradient checkpointing. On an RTX 5080 that's about 16 min per fold with the GPU to itself, and about 8 s to score a fold. A checkpoint is about 0.8 GB (fp16). Results are in the 5-fold CV table above.
-
-**How to:**
-
-1. Write a JSONL file with one row per training example: `{"state": text, "questions": {"malicious": {"type": "noul", "instructions": "<prompt from sys_one_prompt.json>"}}, "expected": {"malicious": 0|1}}`.
-2. Run `finetune("train.jsonl", "convaiinnovations/laya", "data/models/laya_ft", TrainConfig())` (`from laya.train import TrainConfig, finetune`). On OOM, lower `micro_batch` and raise `grad_accum` to keep the effective batch.
-3. Laya holds out 10% of the file (at most 400 rows) for temperature calibration, so pass training data only.
-4. Load it with `laya.agent.Agent("data/models/laya_ft")` and call `predict_batch(texts, questions)`. P(malicious) is `r["answers"]["malicious"]["noul"]`.
-5. In this repo, `nested_cv({"laya_ft": LayaFinetunedClassifier()}, load_data(), n_outer=5)` does all of the above per fold.
-
-**Caveats:**
-
-- **Not bit-reproducible.** Two runs of the same fold gave AUROC 0.9964 vs 0.9970, most likely from GPU/amp nondeterminism.
-- **The calibration slice isn't group-aware** (see Limitations). That doesn't affect AUROC or the 0.5 decisions.
-
 ## Running it
 
 ```bash
@@ -284,4 +265,4 @@ This repository contains code only. No data, model weights or results are commit
 | Laya | [`convaiinnovations/laya`](https://huggingface.co/convaiinnovations/laya) and the `laya` package | Apache 2.0 |
 | Embeddings | [`Qwen/Qwen3-Embedding-0.6B`](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | Apache 2.0 |
 
-Check the WildGuard terms before any public or commercial release.
+REFLEX itself is released under the Apache 2.0 licence (`LICENSE`). Laya and Qwen are installed or downloaded at runtime and aren't redistributed here, so this repo needs no copy of their licences. **Fine-tuned Laya checkpoints are derivative works of Laya:** if you ever publish one, include Laya's Apache 2.0 licence and state that the weights were modified. Check the WildGuard terms before any public or commercial release that redistributes data.

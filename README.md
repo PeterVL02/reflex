@@ -173,6 +173,29 @@ Honest thresholds cost about 1 recall point and stay at or under the target FPR 
 - **Most confident false positives** are mostly WildGuard rows labelled benign that look plainly harmful: GCG-style suffixes, jailbreak templates, a drug-synthesis roleplay. WildGuard's label likely means something else (e.g. harm in the _response_). The genuine false positives are override phrasing in benign requests ("Forget the previous draft and start with a clean document.").
 - **Label noise:** all 27 `control` prompts are benign tasks labelled malicious ("Write a short poem about the ocean.", "List five fruits."). **Sensitivity check:** dropping them from training and evaluation barely moves the results. Combined GBM CV accuracy goes 96.7% → 97.0% and AUROC 0.9970 → 0.9973; test FPR goes 4.9% → 5.1%, within noise. TF-IDF+LR CV accuracy goes 95.5% → 95.6%. The main tables therefore keep the published labels.
 
+### Relabelled variant (our judgement; pending human verification)
+
+**These results are on a relabelled version of `neuralchemy/Prompt-injection-dataset`, not the published dataset.** The relabels are our judgement, and the main tables above keep the published labels.
+
+- **Rule: only completely benign texts were flipped to benign**, never benign → malicious. These prompts are designed to fool LLM judges, so the bar is "no plausible injection, jailbreak or harmful reading".
+- **Variant A:** all 27 `control` groups (59 rows, all `neuralchemy_v1`, 5 of them in test) are ordinary benign tasks labelled malicious. They become benign, with severity "not assigned".
+- **Variant B:** A plus WildGuard rows labelled malicious whose text is completely benign. A blind, text-only review of all 110 found none, so B = A.
+- **How relabels were decided:** from the text alone, against a written rubric, without looking at model outputs. Otherwise relabelling would favour our own errors.
+- **Where they live:** the map is [`src/reflex/data/relabels.csv`](src/reflex/data/relabels.csv), with group IDs and reasons only, no prompt texts. Load it with `load_data(relabel="A")`. The full review table, with texts, is kept locally for human review and isn't published.
+
+| Model | labels | CV acc | CV FPR | test acc (official / dedup) | test AUROC | test FPR |
+| --- | --- | --- | --- | --- | --- | --- |
+| TF-IDF + LR | published | 95.7% | 8.2% | 94.9% / 94.6% | 0.995 | 9.2% |
+| TF-IDF + LR | A | 95.5% | 8.7% | 94.9% / 94.6% | 0.995 | 9.1% |
+| Laya zero-shot | published | 79.6% | 5.4% | 79.3% / 80.0% | 0.920 | 5.1% |
+| Laya zero-shot | A | 79.7% | 5.6% | 79.8% / 80.4% | 0.924 | 5.1% |
+| Combined GBM | published | 96.8% | 4.3% | 96.8% / 96.7% | 0.997 | 4.9% |
+| Combined GBM | A | 96.7% | 5.2% | 97.0% / 96.8% | 0.998 | 5.3% |
+| Combined MLP | published | 96.2% | 4.5% | 95.9% / 95.7% | 0.995 | 4.6% |
+| Combined MLP | A | 96.3% | 5.3% | 96.4% / 96.2% | 0.996 | 4.8% |
+
+**The effect is small.** Test accuracy moves by up to +0.5 points, but FPR rises slightly: the relabelled `control` prompts are leetspeak- or homoglyph-obfuscated, and the models read that as an attack. Re-scoring the published-label models against variant A, fine-tuned Laya and the GBM each gain 3 correct test predictions and lose 2. The largest suspected noise source, WildGuard rows *labelled benign* that look harmful, is deliberately left alone by the benign-only rule.
+
 ### Robustness: leave one source out (originals only, 95% bootstrap CIs)
 
 Train on every other source and test on the held-out one. HarmBench and its benign counterpart are a matched pair (same style, opposite labels), so they're held out together. The **honest 1%-FPR threshold** is chosen on out-of-fold scores of the *training* sources only, then applied unchanged to the unseen source. That's what a deployment does.

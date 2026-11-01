@@ -130,7 +130,7 @@ A ready-made LODO framework over 18 datasets exists: [prompt-mining](https://git
 
 ## Implications for this project
 
-Ranked by expected value per unit of effort. GPU times are rough estimates for an RTX 5080, not measurements. Anything likely to need more than about 1 h of GPU is marked **needs user approval**.
+Ranked by expected value per unit of effort. GPU times are rough estimates for an RTX 5080, not measurements. Anything likely to need more than about 1 h of GPU is marked **long GPU run**.
 
 1. **Build an OOD evaluation harness, and report TPR at 1% FPR plus FPR on benign sets.**
    - *Value:* very high. It is the open question, and it turns "96.7%" into a number that means something.
@@ -152,7 +152,7 @@ Ranked by expected value per unit of effort. GPU times are rough estimates for a
    - Add benign trigger-word text to training, in the spirit of PIGuard's MOF ([2410.22770](https://arxiv.org/abs/2410.22770)). Sources: OR-Bench (not the hard-1K used for evaluation), XSTest-style safe prompts, and benign security discussion and documentation.
    - Pick the operating threshold for a target FPR of 1%, not 0.5.
    - *Value:* high for false positives on real users.
-   - *Effort:* 1 day. *Compute:* CPU plus minutes of GPU for features. Re-fine-tuning Laya with it would likely exceed 1 h, so that part **needs user approval**.
+   - *Effort:* 1 day. *Compute:* CPU plus minutes of GPU for features. Re-fine-tuning Laya with it would likely exceed 1 h, so that part **long GPU run**.
 6. **Build a two-stage cascade and measure latency.**
    - *Stage 1:* TF-IDF + LR + handcrafted features. Stop when the score is confidently low or high.
    - *Stage 2:* escalate the uncertain band to Qwen + Laya + GBM.
@@ -161,15 +161,15 @@ Ranked by expected value per unit of effort. GPU times are rough estimates for a
 7. **Activation-probe feature.**
    - Train an LR probe on mean-pooled middle- and late-layer hidden states of a small decoder (Qwen3-0.6B or 1.7B; Qwen3-Embedding's own hidden layers are an option), and add it as a combiner input. Evaluate under LODO.
    - *Value:* medium-high. This is the best-generalising approach in [Fomin](https://arxiv.org/html/2602.14161v1), although that result used an 8B model.
-   - *Effort:* 1–2 days. *Compute:* feature extraction over 16k plus OOD prompts at about 1.7B should take well under 1 h. An 8B probe would likely be more than 1 h (**needs user approval**).
+   - *Effort:* 1–2 days. *Compute:* feature extraction over 16k plus OOD prompts at about 1.7B should take well under 1 h. An 8B probe would likely be more than 1 h (**long GPU run**).
 8. **Indirect-injection and agent evaluation**, only if documents or tool outputs will pass through the screen: LLMail-Inject (a sample), BIPIA and the AgentDojo regenerated splits ([code](https://github.com/lzwhehe/benign-instruction-bench)). Chunk long inputs into windows.
-   - *Value:* medium, depending on scope. *Effort:* 1–2 days. *Compute:* under 1 h for a 20k-sample subset. Regenerating AgentDojo traces needs an agent LLM, which would likely be more than 1 h (**needs user approval**).
+   - *Value:* medium, depending on scope. *Effort:* 1–2 days. *Compute:* under 1 h for a 20k-sample subset. Regenerating AgentDojo traces needs an agent LLM, which would likely be more than 1 h (**long GPU run**).
 9. **Multilingual check.**
    - Use PINT-style languages. Evaluate the multilingual Laya checkpoint and Prompt Guard 2 86M on machine-translated copies of the OOD sets.
-   - *Value:* medium, depending on whether the organisation's users write in other languages. Translation with a local MT model over about 10k prompts would likely be more than 1 h (**needs user approval**).
+   - *Value:* medium, depending on whether the organisation's users write in other languages. Translation with a local MT model over about 10k prompts would likely be more than 1 h (**long GPU run**).
 10. **LLM-judge ceiling (optional):** gpt-oss-safeguard-20b (fits in 16 GB) or Granite Guardian 3.3 8B on the uncertain band only.
     - *Value:* low-medium. It shows how much a stage-2 judge would add.
-    - *Compute:* reasoning-mode judging over thousands of prompts would likely be more than 1 h (**needs user approval**). Evidence that 7–8B judges help is weak ([2610.03448](https://arxiv.org/html/2610.03448)).
+    - *Compute:* reasoning-mode judging over thousands of prompts would likely be more than 1 h (**long GPU run**). Evidence that 7–8B judges help is weak ([2610.03448](https://arxiv.org/html/2610.03448)).
 
 **Not recommended now:** building our own adaptive-attack red team (expensive, and the literature already shows static detectors fall); KAD/DataSentinel (it targets application data, costs an LLM call per input, and has itself been broken); perplexity filters as a stand-alone detector.
 

@@ -31,9 +31,15 @@ def assign_split_groups(df: pd.DataFrame) -> pd.Series[str]:
 
     Returns:
         pd.Series[str]: One split-group label per row, aligned with `df`.
+
+    Raises:
+        ValueError: If one group holds originals with different dedup keys.
     """
     originals = df[~df["augmented"]]
     keys = originals["text"].map(make_dedup_key).replace("", np.nan)
+    # A group with two differently keyed originals would merge depending on row order.
+    if (keys.groupby(originals["group_id"]).nunique() > 1).any():
+        raise ValueError("a group has originals with different dedup keys")
     key_of_group = dict(zip(originals["group_id"], "key:" + keys))
     return df["group_id"].map(key_of_group).fillna(df["group_id"])
 

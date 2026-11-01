@@ -15,7 +15,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.metrics import roc_auc_score
 
-from reflex.data.sampler import SEED, make_splits
+from reflex.data.sampler import SEED, assign_split_groups, make_splits
 from reflex.evaluation.k_fold_cross import fit_estimator, make_X
 
 type ErrorKind = Literal["fp", "fn"]
@@ -39,6 +39,10 @@ class SourceResult(TypedDict):
     recall: float
     fpr: float
     auroc: float
+    threshold: float
+    recall_ci: tuple[float, float]
+    fpr_ci: tuple[float, float]
+    auroc_ci: tuple[float, float]
 
 
 def predict_fitted(
@@ -204,29 +208,87 @@ def get_confident_errors(
 
 
 def find_cross_source_groups(df: pd.DataFrame) -> list[str]:
-    """Return the group_ids whose rows come from more than one `source`."""
-    n_sources = df.groupby("group_id")["source"].nunique()
+    """Return the split groups (near-dup-merged, as `make_splits` uses) spanning sources."""
+    n_sources = df.groupby(assign_split_groups(df))["source"].nunique()
     return n_sources[n_sources > 1].index.tolist()
 
 
+# Held out together: HarmBench and its benign counterpart share a style with opposite labels,
+# so holding out one half teaches "this style = the other label".
+SOURCE_FAMILIES: dict[str, str] = {"harmbench_benign": "harmbench"}
+N_BOOTSTRAP: int = 1000
+
+
+def bootstrap_rates(
+    y: npt.NDArray[np.int64],
+    scores: npt.NDArray[np.float64],
+    threshold: float,
+    seed: int = SEED,
+) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
+    """Return 95% percentile-bootstrap CIs for (recall, FPR, AUROC) over resampled rows."""
+    rng = np.random.default_rng(seed)
+    recalls, fprs, aurocs = [], [], []
+    for _ in range(N_BOOTSTRAP):
+        idx = rng.integers(0, len(y), len(y))
+        fpr, recall = compute_rates(y[idx], scores[idx], threshold)
+        recalls.append(recall)
+        fprs.append(fpr)
+        both = len(np.unique(y[idx])) > 1
+        aurocs.append(roc_auc_score(y[idx], scores[idx]) if both else np.nan)
+
+    def interval(values: list[float]) -> tuple[float, float]:
+        """Return the 2.5th and 97.5th percentiles, ignoring NaN."""
+        lo, hi = (
+            np.nanpercentile(values, [2.5, 97.5])
+            if np.isfinite(values).any()
+            else (np.nan, np.nan)
+        )
+        return float(lo), float(hi)
+
+    return interval(recalls), interval(fprs), interval(aurocs)
+
+
 def evaluate_leave_one_source_out(
-    estimator: BaseEstimator, df: pd.DataFrame
+    estimator: BaseEstimator,
+    df: pd.DataFrame,
+    target_fpr: float | None = None,
+    seed: int = SEED,
 ) -> list[SourceResult]:
     """
-    For each source, fit on all other sources and score that source's originals at 0.5.
+    For each source family, fit on all other sources and score the held-out originals.
+
+    Args:
+        estimator (BaseEstimator): Unfitted model (cloned per held-out family).
+        df (pd.DataFrame): The full frame (originals and augmented rows).
+        target_fpr (float | None): None scores at threshold 0.5. Otherwise the threshold
+            is chosen honestly for this FPR on 3-fold out-of-fold scores of the
+            training sources only, never on the held-out family.
+        seed (int): Seed for the out-of-fold folds and the bootstrap.
+
+    Returns:
+        list[SourceResult]: One result per family, with 95% bootstrap CIs.
 
     Raises:
-        ValueError: If a group spans two sources (holding one out would leak the group).
+        ValueError: If a split group spans two sources (holding one out would leak it).
     """
     if cross := find_cross_source_groups(df):
         raise ValueError(f"{len(cross)} groups span several sources")
+    family = df["source"].replace(SOURCE_FAMILIES)
     results: list[SourceResult] = []
-    for source in sorted(df["source"].unique()):
-        held = df["source"] == source
+    for source in sorted(family.unique()):
+        held = family == source
+        train = df[~held]
         val = df[held & ~df["augmented"]]
         y = val["label"].to_numpy()
-        scores = predict_fitted(estimator, df[~held], val)
-        fpr, recall = compute_rates(y, scores, 0.5)
+        threshold = 0.5
+        if target_fpr is not None:
+            oof = predict_oof(estimator, train, 3, seed)
+            threshold = choose_threshold(
+                oof["label"].to_numpy(), oof["score"].to_numpy(), target_fpr
+            )
+        scores = predict_fitted(estimator, train, val)
+        fpr, recall = compute_rates(y, scores, threshold)
+        recall_ci, fpr_ci, auroc_ci = bootstrap_rates(y, scores, threshold, seed)
         results.append(
             SourceResult(
                 source=str(source),
@@ -237,6 +299,10 @@ def evaluate_leave_one_source_out(
                 auroc=float(roc_auc_score(y, scores))
                 if len(np.unique(y)) > 1
                 else float("nan"),
+                threshold=threshold,
+                recall_ci=recall_ci,
+                fpr_ci=fpr_ci,
+                auroc_ci=auroc_ci,
             )
         )
     return results

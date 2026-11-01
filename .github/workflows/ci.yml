@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+
+      - name: Lint
+        run: |
+          uvx ruff check src experiments.py tests
+          uvx ruff format --check src experiments.py tests
+
+      # The full project pulls CUDA torch and model runtimes (several GB). The tests only
+      # need these four packages, installed at the versions pinned in uv.lock.
+      - name: Install test dependencies
+        run: |
+          uv export --frozen --no-hashes --no-emit-project --all-groups > /tmp/all.txt
+          grep -iE '^(numpy|pandas|scikit-learn|pytest)==' /tmp/all.txt > /tmp/test.txt
+          cat /tmp/test.txt
+          uv venv
+          uv pip install -r /tmp/test.txt
+
+      - name: Test
+        run: PYTHONPATH=src .venv/bin/python -m pytest -q

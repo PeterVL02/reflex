@@ -31,11 +31,14 @@ class ModelResult(TypedDict):
 def evaluate_model(
     name: str, estimator: BaseEstimator, df: pd.DataFrame
 ) -> ModelResult:
-    """Run 5-fold CV, the official holdout and the near-dedup holdout for one model."""
+    """
+    Run 5-fold CV on train + validation, then fit once and score the official and dedup test.
+
+    CV never sees the test split, so choosing models by CV keeps the test score unbiased.
+    """
     start = time.perf_counter()
-    cv = nested_cv({name: estimator}, df, n_outer=N_OUTER)
-    holdout = evaluate_holdout({name: estimator}, df)
-    holdout_dedup = evaluate_holdout({name: estimator}, df, drop_near_duplicates=True)
+    cv = nested_cv({name: estimator}, df[df["split"] != "test"], n_outer=N_OUTER)
+    holdout, holdout_dedup = evaluate_holdout({name: estimator}, df)
     seconds = time.perf_counter() - start
     print(f"{name}: done in {seconds:.0f}s", flush=True)
     return ModelResult(

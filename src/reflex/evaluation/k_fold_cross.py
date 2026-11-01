@@ -227,6 +227,37 @@ def select_candidate(
     return max(inner_scores, key=inner_scores.__getitem__), inner_scores
 
 
+def build_record(
+    model: BaseEstimator,
+    name: str,
+    params: str,
+    inner_scores: dict[str, float],
+    n_train: int,
+    val: pd.DataFrame,
+    seed: int,
+    run_id: str,
+    fold: int,
+    eval_kind: EvalKind,
+) -> FoldRecord:
+    """Score a fitted model once on val and package the result as a FoldRecord."""
+    return FoldRecord(
+        timestamp=datetime.now(UTC).isoformat(timespec="seconds"),
+        run_id=run_id,
+        model=name,
+        params=params,
+        fold=fold,
+        n_train=n_train,
+        n_val=len(val),
+        metrics=score_estimator(model, make_X(val, model), val["label"]),
+        inner_scores=inner_scores,
+        seed=seed,
+        eval=eval_kind,
+        severity=score_severity(model, val)
+        if hasattr(model, "predict_severity")
+        else None,
+    )
+
+
 def evaluate_fold(
     candidates: dict[str, BaseEstimator],
     train: pd.DataFrame,
@@ -241,21 +272,17 @@ def evaluate_fold(
     """Select on inner folds of train, refit the winner on train, score it once on val."""
     best, inner_scores = select_candidate(candidates, train, n_inner, metric, seed)
     model = fit_estimator(candidates[best], train)
-    return FoldRecord(
-        timestamp=datetime.now(UTC).isoformat(timespec="seconds"),
-        run_id=run_id,
-        model=best,
-        params=repr(candidates[best]),
-        fold=fold,
-        n_train=len(train),
-        n_val=len(val),
-        metrics=score_estimator(model, make_X(val, model), val["label"]),
-        inner_scores=inner_scores,
-        seed=seed,
-        eval=eval_kind,
-        severity=score_severity(model, val)
-        if hasattr(model, "predict_severity")
-        else None,
+    return build_record(
+        model,
+        best,
+        repr(candidates[best]),
+        inner_scores,
+        len(train),
+        val,
+        seed,
+        run_id,
+        fold,
+        eval_kind,
     )
 
 
@@ -299,46 +326,56 @@ def evaluate_holdout(
     metric: MetricName = "auroc",
     seed: int = SEED,
     results_path: Path = RESULTS_PATH,
-    drop_near_duplicates: bool = False,
-) -> FoldRecord:
+) -> tuple[FoldRecord, FoldRecord]:
     """
     Evaluate on the official HF test split, comparable with the data card.
 
     Selection (only with more than one candidate) uses inner `make_splits` folds of the
-    non-test rows (train + validation); the winner is refit on all non-test rows and scored
-    once on `split == "test"`. The test split is never used for selection or tuning.
-
-    With `drop_near_duplicates`, test prompts with a near-duplicate outside the test split
-    (54 of 942 in `full`, see `assign_split_groups`) are left out of scoring, which removes the
-    leak the HF split itself has. Training is unchanged.
+    non-test rows (train + validation). The winner is fit once on all non-test rows and
+    scored on two versions of the test split:
+    - "holdout": every test row, as published.
+    - "holdout_dedup": without the test prompts that have a near-duplicate outside the test
+      split (54 of 942 in `full`, see `assign_split_groups`), which removes the HF split's
+      own leak.
+    The test split is never used for selection or tuning.
 
     Returns:
-        FoldRecord: The holdout record (eval="holdout" or "holdout_dedup", fold=-1), also
-        appended to `results_path`.
+        tuple[FoldRecord, FoldRecord]: The "holdout" and "holdout_dedup" records (fold=-1),
+        both also appended to `results_path`.
+
+    Raises:
+        ValueError: If the test split holds augmented rows or shares a group with the rest.
     """
     is_test = df["split"] == "test"
-    # Holds for the HF configs; guard it so another dataset version cannot leak.
-    assert not df.loc[is_test, "augmented"].any(), "test split has augmented rows"
-    assert not set(df.loc[is_test, "group_id"]) & set(df.loc[~is_test, "group_id"]), (
-        "a group spans the test split and the rest"
+    # Holds for the HF configs; checked so another dataset version cannot leak.
+    if df.loc[is_test, "augmented"].any():
+        raise ValueError("test split has augmented rows")
+    if set(df.loc[is_test, "group_id"]) & set(df.loc[~is_test, "group_id"]):
+        raise ValueError("a group spans the test split and the rest")
+    groups = assign_split_groups(df)
+    is_dedup = is_test & ~groups.isin(groups[~is_test])
+    train = df[~is_test]
+    best, inner_scores = select_candidate(candidates, train, n_inner, metric, seed)
+    model = fit_estimator(candidates[best], train)
+    run_id = uuid.uuid4().hex[:8]
+    official, dedup = (
+        build_record(
+            model,
+            best,
+            repr(candidates[best]),
+            inner_scores,
+            len(train),
+            df[mask],
+            seed,
+            run_id,
+            -1,
+            kind,
+        )
+        for kind, mask in (("holdout", is_test), ("holdout_dedup", is_dedup))
     )
-    scored = is_test
-    if drop_near_duplicates:
-        split_groups = assign_split_groups(df)
-        scored = is_test & ~split_groups.isin(split_groups[~is_test])
-    record = evaluate_fold(
-        candidates,
-        df[~is_test],
-        df[scored],
-        n_inner,
-        metric,
-        seed,
-        uuid.uuid4().hex[:8],
-        -1,
-        "holdout_dedup" if drop_near_duplicates else "holdout",
-    )
-    save_record(record, results_path)
-    return record
+    save_record(official, results_path)
+    save_record(dedup, results_path)
+    return official, dedup
 
 
 def summarize(records: list[FoldRecord]) -> pd.DataFrame:

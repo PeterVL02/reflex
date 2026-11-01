@@ -83,11 +83,13 @@ def run_experiment(
             metric when `holdout` is set, and the wall time in seconds.
     """
     start = time.perf_counter()
-    cv = summarize(nested_cv({name: estimator}, df, n_outer=N_OUTER))
+    # CV on train + validation only: choosing by CV must never see test labels.
+    dev = df[df["split"] != "test"]
+    cv = summarize(nested_cv({name: estimator}, dev, n_outer=N_OUTER))
     row = {m: float(cv.loc["mean", m]) for m in METRICS}
     row["fpr_std"] = float(cv.loc["std", "fpr"])
     if holdout:
-        test = evaluate_holdout({name: estimator}, df)["metrics"]
+        test = evaluate_holdout({name: estimator}, df)[0]["metrics"]
         row |= {f"test_{m}": float(test[m]) for m in METRICS}
     row["seconds"] = time.perf_counter() - start
     print(

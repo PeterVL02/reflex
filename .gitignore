@@ -9,7 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-# Local dataset cache (repo-root only; src/prompt_protect/data/ is code)
+# Local dataset cache (repo-root only; src/reflex/data/ is code)
 /data/
 results/
 
@@ -18,3 +18,7 @@ CLAUDE.md
 
 # graphify output (regenerate with /graphify src --update)
 graphify-out/
+
+# ml-workflow progress log and checkpoint reports: local only (progress lives in CLAUDE.md)
+/PROGRESS.md
+/docs/checkpoints/

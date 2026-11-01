@@ -99,7 +99,8 @@ Folds and inner OOF use the near-duplicate-merged groups. "Dedup" drops the 54 t
 | Combined, LR combiner | 95.1% / 94.9% | 0.958 / 0.955 | 0.993 / 0.993 | 6.2% |
 | **Combined, GBM combiner** | **96.8% / 96.7%** | **0.973 / 0.971** | **0.997 / 0.997** | 4.9% |
 | Combined, torch MLP (multi-task) | 95.9% / 95.7% | 0.965 / 0.962 | 0.995 / 0.995 | **4.6%** |
-| Laya fine-tuned alone (`v1_attack_harm`, not in the combiner) | 96.9% / 96.9% | 0.974 / 0.972 | 0.993 / 0.993 | **4.6%** |
+| Laya fine-tuned, full encoder (`v1_attack_harm`, not in the combiner) | 96.9% / 96.8% | 0.974 / 0.972 | 0.993 / 0.993 | **4.6%** |
+| Laya fine-tuned, head only (frozen encoder) | 95.5% / 95.5% | 0.962 / 0.960 | 0.983 / 0.983 | 5.1% |
 
 FPR is identical on both versions because all 54 near-twins are malicious. The leak inflated the official numbers by only 0.1–0.4 points.
 

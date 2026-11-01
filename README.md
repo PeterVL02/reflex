@@ -1,5 +1,8 @@
 # REFLEX: Rapid Ensemble of Frozen and Learned EXperts
 
+> [!IMPORTANT]
+> **Research use only.** The code is Apache 2.0, but that licence covers only the code. The models it produces are trained on [`neuralchemy/Prompt-injection-dataset`](https://huggingface.co/datasets/neuralchemy/Prompt-injection-dataset), and that dataset's card lists one of its sources, WildGuard/JudgeComparison, as **research-only**. Before you deploy a REFLEX model, use it commercially, or publish trained weights, check the terms of every data source (see [Credits and licences](#credits-and-licences) and [`docs/legal/licenses.md`](docs/legal/licenses.md)), or retrain without the restricted sources. This is not legal advice.
+
 **REFLEX** detects prompt injection, jailbreaks and malicious requests before they reach an LLM. It's a fast screening layer that sits between an organisation's prompting interface and its model: a "System 1" reflex that runs before the slow, deliberate LLM.
 
 The name describes the method. **Frozen experts** (Qwen3 embeddings, zero-shot Laya, handcrafted signals) are combined with **learned experts** (an out-of-fold TF-IDF model, plus a combiner trained on top), and everything is evaluated with leakage-free group-level cross-validation.
@@ -96,31 +99,35 @@ Folds and inner OOF use the near-duplicate-merged groups. "Dedup" drops the 54 t
 | Combined, LR combiner | 95.1% / 94.9% | 0.958 / 0.955 | 0.993 / 0.993 | 6.2% |
 | **Combined, GBM combiner** | **96.8% / 96.7%** | **0.973 / 0.971** | **0.997 / 0.997** | 4.9% |
 | Combined, torch MLP (multi-task) | 95.9% / 95.7% | 0.965 / 0.962 | 0.995 / 0.995 | **4.6%** |
+| Laya fine-tuned alone (`v1_attack_harm`, not in the combiner) | 96.9% / 96.9% | 0.974 / 0.972 | 0.993 / 0.993 | **4.6%** |
 
 FPR is identical on both versions because all 54 near-twins are malicious. The leak inflated the official numbers by only 0.1–0.4 points.
 
-### Ours: 5-fold CV (full, seed 42, near-dup-merged groups, mean ± std over outer folds)
+### Ours: 5-fold CV (train + validation only, seed 42, near-dup-merged groups, mean ± std)
+
+CV never sees the official test split, so choosing a model by CV can't leak test labels into the test numbers above.
 
 | Model | Accuracy | F1 | ROC-AUC | FPR |
 | --- | --- | --- | --- | --- |
-| TF-IDF + LR | 95.5% ± 0.5 | 0.963 ± 0.004 | 0.995 ± 0.001 | 8.0% ± 1.4 |
-| Laya zero-shot (`v2_attack_min`) | 79.5% ± 1.6 | 0.801 ± 0.018 | 0.920 ± 0.009 | 5.3% ± 0.8 |
-| **Laya fine-tuned** (`v1_attack_harm`, old folds¹) | **97.2% ± 0.4** | **0.976 ± 0.004** | 0.996 ± 0.001 | **3.8% ± 0.7** |
-| Combined, LR | 95.8% ± 0.4 | 0.965 ± 0.004 | 0.993 ± 0.002 | 4.9% ± 1.2 |
-| **Combined, GBM** | **96.7% ± 0.4** | **0.972 ± 0.003** | **0.997 ± 0.001** | **4.3% ± 1.2** |
-| Combined, MLP | 96.3% ± 0.4 | 0.969 ± 0.004 | 0.996 ± 0.001 | 4.4% ± 1.0 |
+| TF-IDF + LR | 95.7% ± 0.6 | 0.965 ± 0.005 | 0.994 ± 0.001 | 8.2% ± 1.6 |
+| Laya zero-shot (`v2_attack_min`) | 79.6% ± 0.9 | 0.802 ± 0.010 | 0.920 ± 0.006 | 5.4% ± 0.8 |
+| **Laya fine-tuned, full encoder** (`v1_attack_harm`)¹ | **96.9% ± 0.2** | **0.974 ± 0.002** | 0.995 ± 0.001 | **3.9% ± 0.7** |
+| Laya fine-tuned, head only (frozen encoder)¹ | 93.6% ± 0.5 | 0.946 ± 0.004 | 0.975 ± 0.003 | 7.5% ± 1.8 |
+| Combined, LR | 96.0% ± 0.5 | 0.967 ± 0.005 | 0.994 ± 0.001 | 4.4% ± 1.0 |
+| **Combined, GBM** | **96.8% ± 0.6** | **0.973 ± 0.005** | **0.997 ± 0.001** | 4.3% ± 1.2 |
+| Combined, MLP | 96.2% ± 0.6 | 0.968 ± 0.005 | 0.996 ± 0.001 | 4.5% ± 1.2 |
 
 Against the old (leaky) folds, CV accuracy moved by at most 0.2 points.
 
-¹ This fine-tune ran on the folds from before the near-duplicate fix; a re-run on the fixed folds is in progress. On the same folds, zero-shot Laya with the same instruction scored 81.3% accuracy, AUROC 0.915 and FPR 7.8%. Fine-tuning won on every fold, mostly through recall (0.978 vs 0.739). **On its own, fine-tuned Laya is the strongest single model in-distribution.** Whether it keeps zero-shot Laya's robustness on unseen sources is still open (see below).
+¹ The Laya rows ran 5-fold CV on all rows, test included, because they predate the train + validation protocol. Nothing was selected on them, but they aren't exactly comparable. The full-encoder run used the fixed (near-duplicate-merged) folds. The earlier run on the old folds scored 97.2% ± 0.4 accuracy, F1 0.976, AUROC 0.996 and FPR 3.8%, so the fix cost it about 0.3 accuracy points. On those old folds, zero-shot Laya with the same instruction scored 81.3% accuracy, AUROC 0.915 and FPR 7.8%. Fine-tuning won on every fold, mostly through recall (0.978 vs 0.739). **On its own, fine-tuned Laya is the strongest single model in-distribution.** Training only the decision head (about 5 min per fold, against about 16 min for the full encoder) recovers most of the gap from zero-shot (93.6% vs 79.6%) but stays clearly behind the full fine-tune. Whether fine-tuned Laya is robust on unseen sources is still open (see below).
 
 **Ablation (GBM combiner):**
 
 | Variant | CV ROC-AUC | CV FPR | test FPR | CV severity MAE |
 | --- | --- | --- | --- | --- |
-| all inputs | 0.997 | 4.3% | 4.9% | 0.162 |
-| without the embedding | 0.996 | **4.1%** | **4.1%** | 0.246 |
-| without Laya | 0.997 | 5.2% | 6.4% | 0.163 |
+| all inputs | 0.997 | 4.3% | 4.9% | 0.165 |
+| without the embedding | 0.997 | **4.1%** | **4.1%** | 0.254 |
+| without Laya | 0.997 | 4.8% | 6.4% | 0.165 |
 
 Laya is what lowers false positives. The embedding doesn't help the binary task (dropping it even lowers FPR slightly), but most of the severity skill comes from it.
 
@@ -165,25 +172,28 @@ Honest thresholds cost about 1 recall point and stay at or under the target FPR 
 - **Most confident false positives** are mostly WildGuard rows labelled benign that look plainly harmful: GCG-style suffixes, jailbreak templates, a drug-synthesis roleplay. WildGuard's label likely means something else (e.g. harm in the _response_). The genuine false positives are override phrasing in benign requests ("Forget the previous draft and start with a clean document.").
 - **Label noise:** all 27 `control` prompts are benign tasks labelled malicious ("Write a short poem about the ocean.", "List five fruits."). **Sensitivity check:** dropping them from training and evaluation barely moves the results. Combined GBM CV accuracy goes 96.7% → 97.0% and AUROC 0.9970 → 0.9973; test FPR goes 4.9% → 5.1%, within noise. TF-IDF+LR CV accuracy goes 95.5% → 95.6%. The main tables therefore keep the published labels.
 
-### Robustness: leave one source out (threshold 0.5, originals only)
+### Robustness: leave one source out (originals only, 95% bootstrap CIs)
 
-Train on every other source and test on the held-out one. HarmBench and its benign counterpart are a matched pair (same style, opposite labels), so they're held out together. Cells show recall / FPR / AUROC; "–" means the source lacks that class.
+Train on every other source and test on the held-out one. HarmBench and its benign counterpart are a matched pair (same style, opposite labels), so they're held out together. The **honest 1%-FPR threshold** is chosen on out-of-fold scores of the *training* sources only, then applied unchanged to the unseen source. That's what a deployment does.
 
-| Held-out source | Combined GBM | TF-IDF + LR | Laya zero-shot |
-| --- | --- | --- | --- |
-| hackaprompt (all malicious) | 0.971 / – / – | 0.954 / – / – | 0.665 / – / – |
-| harmbench + harmbench_benign | 0.35 / 0.23 / 0.642 | 0.74 / 0.66 / 0.528 | 0.23 / **0.04** / **0.796** |
-| neuralchemy_v1 (88% of benign data) | 0.979 / 0.280 / 0.972 | 0.995 / 0.905 / 0.900 | 0.770 / **0.039** / 0.946 |
-| original | 0.922 / 0.233 / 0.945 | 0.951 / 0.300 / 0.941 | 0.657 / 0.067 / 0.884 |
-| wildguard_judgecomp | 0.973 / 0.674 / 0.762 | 0.973 / 0.811 / 0.636 | 0.618 / **0.226** / **0.785** |
+**Combined GBM vs Laya zero-shot, by held-out source** (recall / FPR at the honest 1% threshold; ROC-AUC with CI):
 
-**On unseen sources, the trained models' FPR rises to 23–90%, while zero-shot Laya stays at 4–23% and ranks better on HarmBench and WildGuard.** In-distribution CV hides this. In production that means:
+| Held-out source | GBM recall / FPR | Laya recall / FPR | GBM ROC-AUC | Laya ROC-AUC |
+| --- | --- | --- | --- | --- |
+| hackaprompt (all malicious) | 0.826 / – | 0.377 / – | – | – |
+| harmbench + harmbench_benign | 0.060 / 0.020 | 0.030 / 0.000 | 0.668 [0.59, 0.74] | **0.796 [0.73, 0.86]** |
+| neuralchemy_v1 (88% of benign data) | 0.685 / **0.008** | 0.000 / 0.000 | **0.972 [0.97, 0.98]** | 0.945 [0.94, 0.95] |
+| original | 0.863 / 0.067 | 0.490 / 0.000 | **0.945 [0.90, 0.98]** | 0.883 [0.82, 0.94] |
+| wildguard_judgecomp | 0.818 / 0.395 | 0.482 / 0.163 | 0.762 [0.71, 0.81] | 0.785 [0.74, 0.83] |
 
-- re-tune the threshold on real benign traffic
-- monitor FPR drift
-- treat Laya as the component that generalises
+TF-IDF + LR at the honest threshold: FPR 7–38% on the mixed sources, AUROC 0.53–0.94.
 
-The tradeoff between frozen robustness and learned in-distribution accuracy is the central question for REFLEX.
+**What this shows:**
+
+- **At a 0.5 threshold, the trained models' FPR on unseen sources looked catastrophic (23–90%), but that was mostly the threshold.** With an honest threshold, the GBM stays near its target FPR on neuralchemy_v1 (0.8%) and original (6.7%). It fails on WildGuard (39.5%), the source whose "benign" labels look questionable (see above).
+- **Zero-shot Laya is not a clear robustness winner.** It ranks better only on HarmBench, which is plain harmful requests, outside the injection scope, and is tied on WildGuard. The GBM ranks better on neuralchemy_v1 and original. Laya's scores saturate near 1, so a threshold set for 1% FPR leaves it with little recall.
+- **Unseen attack sources cost recall** (HarmBench 6%, neuralchemy_v1 68%). Detection of new styles is the open problem, more than false positives.
+- **In production:** re-tune the threshold on real benign traffic, monitor FPR drift, and evaluate on independent OOD benchmarks (planned).
 
 ## Related work
 
@@ -245,6 +255,8 @@ src/reflex/
     prompts/reference_prompt.md  long system prompt for a generative LLM judge (not used by Laya)
   evaluation/
     k_fold_cross.py         nested_cv, evaluate_holdout, metrics (incl. FPR, severity), results recording
+    analysis.py             OOF scores, operating points, error analysis, leave-one-source-out
+  main.py                   `uv run reflex`: the full model comparison
 results/cv_results.jsonl    one JSON line per outer fold per run (gitignored)
 ```
 

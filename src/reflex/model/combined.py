@@ -179,6 +179,7 @@ class CombinedClassifier(ClassifierMixin, BaseEstimator):
         combiner: CombinerName = "lr",
         use_embedding: bool = True,
         use_laya: bool = True,
+        use_laya_hidden: bool = False,
         base_features: VectorizerName = "tfidf_word",
         seed: int = SEED,
     ) -> None:
@@ -186,6 +187,7 @@ class CombinedClassifier(ClassifierMixin, BaseEstimator):
         self.base_features = base_features
         self.use_embedding = use_embedding
         self.use_laya = use_laya
+        self.use_laya_hidden = use_laya_hidden
         self.seed = seed
 
     def _build_features(
@@ -197,6 +199,8 @@ class CombinedClassifier(ClassifierMixin, BaseEstimator):
             parts.append(get_features(texts, "embedding"))
         if self.use_laya:
             parts.append(get_features(texts, "laya"))
+        if self.use_laya_hidden:
+            parts.append(get_features(texts, "laya_hidden"))
         parts += [extract_handcrafted_features(texts), base_scores[:, None]]
         return np.hstack(parts).astype(np.float64)
 

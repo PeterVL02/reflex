@@ -24,8 +24,8 @@ import pandas as pd
 
 from reflex.data.loader import CACHE_PATH, VERSION, load_data
 
-FeatureName = Literal["embedding", "laya"]
-FEATURE_NAMES: tuple[FeatureName, ...] = ("embedding", "laya")
+FeatureName = Literal["embedding", "laya", "laya_hidden"]
+FEATURE_NAMES: tuple[FeatureName, ...] = ("embedding", "laya", "laya_hidden")
 
 
 def get_laya_columns() -> list[str]:
@@ -40,6 +40,17 @@ def get_laya_instructions() -> list[str]:
     from reflex.model.sys_one import load_instructions
 
     return [load_instructions(key) for key in get_laya_columns()]
+
+
+def get_cache_instructions(name: FeatureName) -> list[str] | None:
+    """Return the Laya instructions a feature set depends on (None for embeddings)."""
+    if name == "laya":
+        return get_laya_instructions()
+    if name == "laya_hidden":
+        from reflex.model.sys_one import HIDDEN_PROMPT, load_instructions
+
+        return [load_instructions(HIDDEN_PROMPT)]
+    return None
 
 
 def get_cache_path(name: FeatureName) -> Path:
@@ -68,6 +79,10 @@ def compute_features(texts: list[str], name: FeatureName) -> npt.NDArray[np.floa
         from reflex.model.embeddings import embed_prompts
 
         return embed_prompts(texts).astype(np.float32)
+    if name == "laya_hidden":
+        from reflex.model.sys_one import extract_hidden_states
+
+        return extract_hidden_states(texts)
 
     from reflex.model.sys_one import classify_prompts
 
@@ -97,7 +112,8 @@ def load_feature_cache(
     if not path.exists():
         return {}, np.empty((0, 0), dtype=np.float32)
     with np.load(path) as npz:
-        if name == "laya" and npz["instructions"].tolist() != get_laya_instructions():
+        instructions = get_cache_instructions(name)
+        if instructions is not None and npz["instructions"].tolist() != instructions:
             raise ValueError(
                 f"{path} is stale (sys_one_prompt.json changed); "
                 "run build_feature_cache(refresh=True)."
@@ -157,8 +173,8 @@ def build_feature_cache(refresh: bool = False) -> None:
             continue
         X = compute_features(texts, name)
         extra = (
-            {"instructions": np.array(get_laya_instructions())}
-            if name == "laya"
+            {"instructions": np.array(instructions)}
+            if (instructions := get_cache_instructions(name)) is not None
             else {}
         )
         path.parent.mkdir(parents=True, exist_ok=True)
